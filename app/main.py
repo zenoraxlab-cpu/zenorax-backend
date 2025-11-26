@@ -2,7 +2,7 @@ from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import FileResponse
 import uuid
 import os
-from processing import process_audio
+from app.processing import process_audio
 
 app = FastAPI()
 
