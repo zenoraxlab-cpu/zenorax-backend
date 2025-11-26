@@ -21,3 +21,4 @@ async def process(file: UploadFile = File(...)):
     process_audio(in_path, out_path)
 
     return FileResponse(out_path, media_type="audio/wav", filename="processed.wav")
+ 
