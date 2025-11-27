@@ -9,7 +9,7 @@ from modules.normalize import normalize_lufs, normalize_peak
 from modules.analyzer import analyze_file
 from modules.channels import to_mono, to_stereo, swap_lr, ms_encode, ms_decode
 from modules.trim_silence import trim_silence
-from modules.convert_format import convert_format
+from modules.format_converter import convert_format
 
 app = FastAPI(title="Zenorax Backend API")
 
