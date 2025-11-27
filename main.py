@@ -12,6 +12,19 @@ from modules.trim_silence import trim_silence
 from modules.format_converter import convert_format
 
 app = FastAPI(title="Zenorax Backend API")
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI(title="Zenorax Backend API")
+
+# --- CORS ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # можно потом сузить до конкретных доменов
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 TMP_DIR = "/tmp/zenorax"
 os.makedirs(TMP_DIR, exist_ok=True)
