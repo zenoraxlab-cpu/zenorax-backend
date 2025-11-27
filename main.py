@@ -133,3 +133,6 @@ async def trim(
         media_type="audio/wav",
         filename=f"trimmed_{preset}.wav",
     )
+@app.get("/")
+def root():
+    return {"status": "ok"}
