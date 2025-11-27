@@ -133,6 +133,100 @@ async def trim(
         media_type="audio/wav",
         filename=f"trimmed_{preset}.wav",
     )
+    # ---------- 6. Universal PROCESS endpoint (for Next.js frontend) ----------
+
+from pydantic import BaseModel
+from datetime import datetime
+import uuid
+
+class HistoryItem(BaseModel):
+    id: str
+    filename: str
+    tool: str
+    date: str
+    status: str
+    download_url: str | None
+
+HISTORY = {}
+
+
+@app.post("/process")
+async def process_file(
+    file: UploadFile = File(...),
+    tool: str = Form("basic"),
+    mode: str = Form(None),
+    preset: str = Form(None),
+    bitrate: int | None = Form(None),
+    user_id: str = Form("guest"),
+):
+    """
+    UNIVERSAL ENTRY POINT
+    Этот endpoint вызывается frontend'ом.
+    Он перенаправляет файл в нужный модуль.
+    """
+
+    input_path = save_upload_to_tmp(file)
+    output_path = os.path.join(TMP_DIR, f"out_{uuid.uuid4().hex}.wav")
+
+    # --- ROUTES FOR TOOLS ---
+
+    # Normalization
+    if tool == "normalization":
+        if mode == "peak":
+            normalize_peak(input_path, output_path, target_dbfs=-6)
+        else:
+            normalize_lufs(input_path, output_path, target_lufs=-14)
+
+    # Trim Silence
+    elif tool == "trim":
+        trim_silence(input_path, output_path, preset=preset or "voice")
+
+    # Channels
+    elif tool == "channels":
+        if mode == "mono":
+            to_mono(input_path, output_path)
+        elif mode == "stereo":
+            to_stereo(input_path, output_path)
+        elif mode == "swap":
+            swap_lr(input_path, output_path)
+        elif mode == "ms_encode":
+            ms_encode(input_path, output_path)
+        elif mode == "ms_decode":
+            ms_decode(input_path, output_path)
+
+    # Format convert
+    elif tool == "convert":
+        final_path = convert_format(input_path, output_path.replace(".wav", ""), codec=mode or "wav", bitrate_kbps=bitrate)
+        output_path = final_path
+
+    # Simple copy for tools "basic"
+    else:
+        # если инструмент неизвестен — возвращаем файл как есть
+        output_path = input_path
+
+    # --- HISTORY SAVE ---
+    item = HistoryItem(
+        id=str(uuid.uuid4()),
+        filename=file.filename,
+        tool=tool,
+        date=datetime.utcnow().isoformat(),
+        status="done",
+        download_url=None,   # TODO: когда сделаем CDN
+    )
+
+    if user_id not in HISTORY:
+        HISTORY[user_id] = []
+    HISTORY[user_id].append(item)
+
+    return FileResponse(
+        output_path,
+        media_type="audio/wav",
+        filename=f"{tool}.wav"
+    )
+@app.get("/history/{user_id}")
+def get_history(user_id: str):
+    return HISTORY.get(user_id, [])
+
 @app.get("/")
 def root():
     return {"status": "ok"}
