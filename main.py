@@ -110,3 +110,14 @@ async def trim(
     trim_silence(input_path, output_path, preset=preset)
 
     return FileResponse(output_path, media_type="audio/wav", filename=f"trimmed.wav")
+
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
