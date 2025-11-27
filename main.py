@@ -1,4 +1,3 @@
-# main.py
 import os
 import uuid
 from pathlib import Path
@@ -6,34 +5,19 @@ from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import FileResponse, JSONResponse
 
-# modules (твои модули)
 from modules.normalize import normalize_lufs, normalize_peak
 from modules.analyzer import analyze_file
 from modules.channels import to_mono, to_stereo, swap_lr, ms_encode, ms_decode
 from modules.trim_silence import trim_silence
-from modules.format_converter import convert_format
+from modules.convert_format import convert_format
 
-# ========== HISTORY ==========
-from pydantic import BaseModel
-from datetime import datetime
+app = FastAPI(title="Zenorax Backend API")
 
-class HistoryItem(BaseModel):
-    id: str
-    filename: str
-    tool: str
-    date: str
-    status: str
-    download_url: str | None
-
-HISTORY = {}
-
-# ========== APP INIT ==========
-app = FastAPI(title="Zenorax Backend – Utilities")
 TMP_DIR = "/tmp/zenorax"
 os.makedirs(TMP_DIR, exist_ok=True)
 
 
-# ========== UTILS ==========
+# -------- SAVE TEMP FILE --------
 def save_upload_to_tmp(file: UploadFile) -> str:
     ext = Path(file.filename).suffix or ".bin"
     tmp_path = os.path.join(TMP_DIR, f"in_{uuid.uuid4().hex}{ext}")
@@ -42,94 +26,87 @@ def save_upload_to_tmp(file: UploadFile) -> str:
     return tmp_path
 
 
-# =====================================================
-# 6. UNIVERSAL PROCESS ENDPOINT (Frontend → Backend)
-# =====================================================
+# -------- ROOT --------
+@app.get("/")
+def root():
+    return {"status": "ok", "service": "Zenorax Backend"}
 
-@app.post("/process")
-async def process_file(
+
+# -------- NORMALIZE --------
+@app.post("/normalize")
+async def normalize(
     file: UploadFile = File(...),
-    tool: str = Form("basic"),    # инструмент
-    mode: str = Form(None),       # режимы внутри инструмента
-    preset: str = Form(None),     # пресеты
-    bitrate: int | None = Form(None),
-    user_id: str = Form("guest"), # later replace with real auth
+    mode: str = Form("lufs"),
+    target: float = Form(-14.0),
 ):
     input_path = save_upload_to_tmp(file)
-    output_path = os.path.join(TMP_DIR, f"out_{uuid.uuid4().hex}.wav")
+    output_path = os.path.join(TMP_DIR, f"norm_{uuid.uuid4().hex}.wav")
 
-    # --- Normalization ---
-    if tool == "normalization":
-        if mode == "peak":
-            normalize_peak(input_path, output_path, target_dbfs=-6)
-        else:
-            normalize_lufs(input_path, output_path, target_lufs=-14)
+    if mode == "lufs":
+        normalize_lufs(input_path, output_path, target_lufs=target)
+    else:
+        normalize_peak(input_path, output_path, target_dbfs=target)
 
-    # --- Trim Silence ---
-    elif tool == "trim":
-        trim_silence(input_path, output_path, preset=preset or "voice")
+    return FileResponse(output_path, media_type="audio/wav", filename="normalized.wav")
 
-    # --- Channels ---
-    elif tool == "channels":
-        if mode == "mono":
-            to_mono(input_path, output_path)
-        elif mode == "stereo":
-            to_stereo(input_path, output_path)
-        elif mode == "swap":
-            swap_lr(input_path, output_path)
-        elif mode == "ms_encode":
-            ms_encode(input_path, output_path)
-        elif mode == "ms_decode":
-            ms_decode(input_path, output_path)
 
-    # --- Format convert ---
-    elif tool == "convert":
-        final_path = convert_format(
-            input_path,
-            output_path.replace(".wav", ""),
-            codec=mode or "wav",
-            bitrate_kbps=bitrate
-        )
-        output_path = final_path
+# -------- FORMAT CONVERT --------
+@app.post("/convert")
+async def convert(
+    file: UploadFile = File(...),
+    format: str = Form("wav"),
+    bitrate: int | None = Form(None),
+):
+    input_path = save_upload_to_tmp(file)
+    tmp_out_base = os.path.join(TMP_DIR, f"conv_{uuid.uuid4().hex}")
 
-    # --- Basic (copy input) ---
+    final_path = convert_format(input_path, tmp_out_base, codec=format, bitrate_kbps=bitrate)
+
+    return FileResponse(final_path, filename=f"converted.{format}")
+
+
+# -------- ANALYZE --------
+@app.post("/analyze")
+async def analyze(file: UploadFile = File(...)):
+    input_path = save_upload_to_tmp(file)
+    result = analyze_file(input_path)
+    return JSONResponse(result)
+
+
+# -------- CHANNELS --------
+@app.post("/channels")
+async def channels(
+    file: UploadFile = File(...),
+    mode: str = Form("mono"),
+):
+    input_path = save_upload_to_tmp(file)
+    output_path = os.path.join(TMP_DIR, f"ch_{uuid.uuid4().hex}.wav")
+
+    if mode == "mono":
+        to_mono(input_path, output_path)
+    elif mode == "stereo":
+        to_stereo(input_path, output_path)
+    elif mode == "swap":
+        swap_lr(input_path, output_path)
+    elif mode == "ms_encode":
+        ms_encode(input_path, output_path)
+    elif mode == "ms_decode":
+        ms_decode(input_path, output_path)
     else:
         output_path = input_path
 
-    # ========== SAVE HISTORY ==========
-    item = HistoryItem(
-        id=str(uuid.uuid4()),
-        filename=file.filename,
-        tool=tool,
-        date=datetime.utcnow().isoformat(),
-        status="done",
-        download_url=None,
-    )
-
-    if user_id not in HISTORY:
-        HISTORY[user_id] = []
-    HISTORY[user_id].append(item)
-
-    return FileResponse(
-        output_path,
-        media_type="audio/wav",
-        filename=f"{tool}.wav"
-    )
+    return FileResponse(output_path, media_type="audio/wav")
 
 
-# =====================================================
-# 7. HISTORY ENDPOINT
-# =====================================================
+# -------- TRIM SILENCE --------
+@app.post("/trim")
+async def trim(
+    file: UploadFile = File(...),
+    preset: str = Form("voice"),
+):
+    input_path = save_upload_to_tmp(file)
+    output_path = os.path.join(TMP_DIR, f"trim_{uuid.uuid4().hex}.wav")
 
-@app.get("/history/{user_id}")
-def get_history(user_id: str):
-    return HISTORY.get(user_id, [])
+    trim_silence(input_path, output_path, preset=preset)
 
-
-# =====================================================
-# 0. ROOT
-# =====================================================
-
-@app.get("/")
-def root():
-    return {"status": "ok"}
+    return FileResponse(output_path, media_type="audio/wav", filename=f"trimmed.wav")
