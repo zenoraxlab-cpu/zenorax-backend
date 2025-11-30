@@ -1,7 +1,8 @@
 fastapi
 uvicorn
+pydantic
+PyPDF2
+PyMuPDF
+pdfplumber
 python-multipart
-numpy
-soundfile
-librosa
-pyloudnorm
+openai
