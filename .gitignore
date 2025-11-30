@@ -1,0 +1,22 @@
+# Python venv
+venv/
+ENV/
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+
+# PDF uploads
+uploads/
+
+# Logs
+logs/
+*.log
+
+# OS-generated
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
